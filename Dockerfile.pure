@@ -2,29 +2,29 @@
 FROM node:20-slim AS builder
 WORKDIR /app
 
-# Instala dependências de sistema necessárias para compilação
+# Dependências de sistema
 RUN apt-get update && apt-get install -y python3 make g++ git && rm -rf /var/lib/apt/lists/*
 
-# Instala o rimraf globalmente para evitar o erro "not found" nos scripts de clean
-RUN npm install -g rimraf
+# Instala ferramentas de build globalmente
+RUN npm install -g rimraf rollup
 
+# Copia TUDO o que define o workspace primeiro
 COPY package*.json ./
-# Copia também os package.json dos pacotes internos para o npm entender o workspace
 COPY packages/data-provider/package*.json ./packages/data-provider/
+COPY packages/data-schemas/package*.json ./packages/data-schemas/
 
-# Instala tudo. Usamos install para garantir a ligação dos binários nos pacotes
+# Instala as dependências respeitando o workspace
 RUN npm install
 
+# Agora sim, copia o código fonte
 COPY . .
 
-# Build do frontend
+# Limpa qualquer resquício de cache e builda o frontend
 RUN npm run frontend
 
 # Estágio Final
 FROM node:20-slim
 WORKDIR /app
-
-# Instala curl para baixar o seu YAML no Hugging Face
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app /app
