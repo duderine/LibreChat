@@ -1,15 +1,44 @@
-# Usamos a imagem oficial que já tem o frontend e o backend prontos e testados
-FROM ghcr.io/danny-avila/librechat:latest
+# Estágio de Build - Usando Alpine para ser compatível com a base oficial
+FROM node:20-alpine AS builder
 
-USER root
+# Instala ferramentas de compilação do Alpine
+# No Alpine, o 'build-base' equivale ao build-essential do Ubuntu
+RUN apk add --no-cache python3 make g++ git
 
-# Instala apenas o curl para baixar seu YAML do dataset
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
 
-# Configurações de ambiente para o Hugging Face
+# Instala o rimraf e rollup globalmente no Alpine
+RUN npm install -g rimraf rollup
+
+# Copia os arquivos de configuração do monorepo
+COPY package*.json ./
+COPY packages/data-provider/package*.json ./packages/data-provider/
+COPY packages/data-schemas/package*.json ./packages/data-schemas/
+
+# Instala as dependências
+RUN npm install
+
+# Copia o código fonte completo
+COPY . .
+
+# Comando de build do frontend (agora com as ferramentas certas no Alpine)
+RUN npm run frontend
+
+# Estágio Final - Mantendo a leveza do Alpine
+FROM node:20-alpine
+WORKDIR /app
+
+# Instala curl e bash (essenciais para o seu entrypoint e para o Space)
+RUN apk add --no-cache curl bash
+
+# Copia o resultado do build do estágio anterior
+COPY --from=builder /app /app
+
 ENV HOST=0.0.0.0
 ENV PORT=7860
 ENV NODE_ENV=production
 
-# Copiamos o entrypoint que baixa o seu config antes de iniciar
+EXPOSE 7860
+
+# Entrypoint soberano: baixa seu config e inicia o backend compilado por VOCÊ
 ENTRYPOINT ["/bin/bash", "-c", "curl -H \"Authorization: Bearer $HF_TOKEN\" -L \"https://huggingface.co/datasets/Mysterude/libre-mcp/raw/main/librechat.yaml\" -o /app/librechat.yaml && export CONFIG_PATH=/app/librechat.yaml && npm run backend"]
