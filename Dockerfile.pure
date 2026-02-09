@@ -2,31 +2,31 @@
 FROM node:20-slim AS builder
 WORKDIR /app
 
-# Dependências de sistema
-RUN apt-get update && apt-get install -y python3 make g++ git && rm -rf /var/lib/apt/lists/*
+# Instala ferramentas básicas e o PNPM
+RUN apt-get update && apt-get install -y python3 make g++ git curl && \
+    npm install -g pnpm && \
+    rm -rf /var/lib/apt/lists/*
 
-# Instala ferramentas de build globalmente
-RUN npm install -g rimraf rollup
+# Copia os arquivos de definição de dependências
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml* ./
+COPY packages/data-provider/package.json ./packages/data-provider/
+COPY packages/data-schemas/package.json ./packages/data-schemas/
 
-# Copia TUDO o que define o workspace primeiro
-COPY package*.json ./
-COPY packages/data-provider/package*.json ./packages/data-provider/
-COPY packages/data-schemas/package*.json ./packages/data-schemas/
+# Instala dependências usando PNPM (mais rápido e melhor com monorepos)
+RUN pnpm install --frozen-lockfile || pnpm install
 
-# Instala as dependências respeitando o workspace
-RUN npm install
-
-# Agora sim, copia o código fonte
+# Copia o restante do código
 COPY . .
 
-# Limpa qualquer resquício de cache e builda o frontend
-RUN npm run frontend
+# Builda os pacotes internos primeiro, depois o frontend
+RUN pnpm run build:data-provider && pnpm run frontend
 
 # Estágio Final
 FROM node:20-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
+# Copiamos apenas o necessário para rodar o backend
 COPY --from=builder /app /app
 
 ENV HOST=0.0.0.0
